@@ -1,0 +1,328 @@
+import asyncio
+import json
+
+from agent import protocol
+from agent.files import TaskFiles
+from agent.llm import LLM
+from agent.mcp_client import MCPManager
+
+MAX_TOOL_ROUNDS = 25
+MAX_MESSAGES = 50
+KEEP_FIRST = 2
+KEEP_LAST = 40
+
+BASE_PROMPT = """You are Bowie, an autonomous task-focused AI agent. You may have access to tools from a connected MCP server and internal tools for managing your task state.
+
+{soul}
+
+## Task files
+
+- status.md: Current task status (update as you progress)
+- memory.md: Notes, context, and assumptions to persist across sessions
+- roadmap.md: Steps/plan for the task (check off steps as you complete them)
+- logs.md: Activity log (auto-appended)
+
+## Internal tools
+
+- update_status: Update status.md with current state
+- update_memory: Update memory.md with notes to persist
+- update_roadmap: Update roadmap.md with task plan
+
+Always update your task files as you work so you can resume if restarted."""
+
+DEFAULT_SOUL = """## Directives
+
+- Be maximally autonomous. Do not ask the user for clarification — make reasonable assumptions and proceed.
+- If something is ambiguous, pick the most sensible option and move forward. Document your assumptions in memory.md.
+- Only ask the user a question if you are completely blocked and cannot make progress any other way.
+- Execute tools proactively. If you have the tools to accomplish a step, just do it.
+- When you hit an error, try to recover on your own: retry with different parameters, try an alternative approach, or skip and move to the next step.
+- Keep the user informed with short progress updates, not questions."""
+
+INTERNAL_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "update_status",
+            "description": "Update the status.md file with current task status",
+            "parameters": {
+                "type": "object",
+                "properties": {"content": {"type": "string", "description": "New status content"}},
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_memory",
+            "description": "Update memory.md with notes to persist across sessions",
+            "parameters": {
+                "type": "object",
+                "properties": {"content": {"type": "string", "description": "New memory content"}},
+                "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_roadmap",
+            "description": "Update roadmap.md with task plan and steps",
+            "parameters": {
+                "type": "object",
+                "properties": {"content": {"type": "string", "description": "New roadmap content"}},
+                "required": ["content"],
+            },
+        },
+    },
+]
+
+
+class Agent:
+    def __init__(self, task_cfg: dict, llm_cfg: dict, mcp_cfg: dict | None, soul: str = ""):
+        self.task_cfg = task_cfg
+        self.soul = soul.strip() if soul else ""
+        self.files = TaskFiles()
+        self.llm = LLM(llm_cfg)
+        self.mcp = MCPManager(mcp_cfg) if mcp_cfg else None
+        self.messages: list[dict] = []
+        self._interrupted = False
+        self._turn_task: asyncio.Task | None = None
+
+    def _build_system(self) -> str:
+        ctx = self.files.context()
+        task_desc = self.task_cfg.get("description", "")
+        soul_content = self.soul if self.soul else DEFAULT_SOUL
+        system_prompt = BASE_PROMPT.format(soul=soul_content)
+        parts = [system_prompt, f"\n## Task Description\n{task_desc}"]
+        if ctx:
+            parts.append(f"\n## Task Context\n{ctx}")
+        return "\n".join(parts)
+
+    def _truncate_messages(self):
+        if len(self.messages) > MAX_MESSAGES:
+            self.messages = self.messages[:KEEP_FIRST] + self.messages[-KEEP_LAST:]
+
+    def _write_transcript(self):
+        """Write the conversation transcript to memory.md."""
+        lines = []
+        for msg in self.messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "user":
+                lines.append(f"**User:** {content}\n")
+            elif role == "assistant":
+                if content:
+                    lines.append(f"**Bowie:** {content}\n")
+                tool_calls = msg.get("tool_calls")
+                if tool_calls:
+                    for tc in tool_calls:
+                        fn = tc.get("function", {})
+                        lines.append(f"  → tool: {fn.get('name', '?')}\n")
+        self.files.write("memory.md", "\n".join(lines))
+
+    def _get_tools(self) -> list[dict]:
+        mcp_tools = self.mcp.get_tools_for_llm() if self.mcp else []
+        return INTERNAL_TOOLS + mcp_tools
+
+    async def _handle_internal_tool(self, name: str, args: dict) -> str:
+        if name == "update_status":
+            self.files.write("status.md", args["content"])
+            self.files.log(f"Status updated")
+            protocol.send("tool_result", tool="status", content=args["content"])
+            return "Status updated."
+        elif name == "update_memory":
+            self.files.write("memory.md", args["content"])
+            self.files.log(f"Memory updated")
+            protocol.send("tool_result", tool="memory", content=args["content"])
+            return "Memory updated."
+        elif name == "update_roadmap":
+            self.files.write("roadmap.md", args["content"])
+            self.files.log(f"Roadmap updated")
+            protocol.send("tool_result", tool="roadmap", content=args["content"])
+            return "Roadmap updated."
+        return f"Unknown internal tool: {name}"
+
+    async def _handle_tool_calls(self, tool_calls: list) -> list[dict]:
+        results = []
+        for tc in tool_calls:
+            if self._interrupted:
+                results.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": "Interrupted by user.",
+                })
+                continue
+
+            fn = tc.function
+            name = fn.name
+            try:
+                args = json.loads(fn.arguments) if fn.arguments else {}
+            except json.JSONDecodeError:
+                args = {}
+
+            protocol.send("tool_call", tool=name, args=args)
+            self.files.log(f"Tool call: {name}")
+
+            if name in ("update_status", "update_memory", "update_roadmap"):
+                result = await self._handle_internal_tool(name, args)
+            elif self.mcp and self.mcp.has_tool(name):
+                result = await self.mcp.call_tool(name, args)
+                protocol.send("tool_result", tool=name, content=result)
+            else:
+                result = f"Unknown tool: {name}"
+                protocol.send("tool_result", tool=name, content=result)
+
+            self.files.log(f"Tool result [{name}]: {result}")
+
+            results.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result,
+            })
+        self._write_transcript()
+        return results
+
+    async def _llm_turn(self):
+        protocol.send("status", state="thinking")
+        system = self._build_system()
+        tools = self._get_tools()
+
+        full_messages = [{"role": "system", "content": system}] + self.messages
+
+        for _ in range(MAX_TOOL_ROUNDS):
+            if self._interrupted:
+                break
+
+            response = await self.llm.completion(full_messages, tools=tools if tools else None)
+            choice = response.choices[0]
+            msg = choice.message
+
+            assistant_msg = {"role": "assistant", "content": msg.content or ""}
+            if msg.tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
+                    for tc in msg.tool_calls
+                ]
+
+            full_messages.append(assistant_msg)
+            self.messages.append(assistant_msg)
+
+            if not msg.tool_calls:
+                if msg.content:
+                    protocol.send("agent_response", content=msg.content)
+                break
+
+            # Send intermediate text if the LLM wrote something before calling tools
+            if msg.content:
+                protocol.send("agent_response", content=msg.content)
+
+            if self._interrupted:
+                break
+
+            tool_results = await self._handle_tool_calls(msg.tool_calls)
+            full_messages.extend(tool_results)
+            self.messages.extend(tool_results)
+
+        self._truncate_messages()
+        protocol.send("status", state="idle")
+
+    async def _safe_llm_turn(self):
+        try:
+            await self._llm_turn()
+        except asyncio.CancelledError:
+            protocol.send("status", state="idle")
+        except Exception as e:
+            protocol.send("error", content=f"LLM error: {e}")
+            self.files.log(f"Error: {e}")
+            protocol.send("status", state="idle")
+        finally:
+            self._write_transcript()
+
+    async def _cancel_turn(self):
+        """Cancel the currently running LLM turn if any."""
+        if self._turn_task and not self._turn_task.done():
+            self._interrupted = True
+            self._turn_task.cancel()
+            try:
+                await self._turn_task
+            except asyncio.CancelledError:
+                pass
+            self._turn_task = None
+
+    async def _start_turn(self):
+        """Start a new LLM turn as a background task."""
+        self._interrupted = False
+        self._turn_task = asyncio.create_task(self._safe_llm_turn())
+
+    async def run(self):
+        if self.mcp:
+            try:
+                await self.mcp.connect()
+            except Exception as e:
+                protocol.send("error", content=f"Failed to connect MCP: {e}")
+
+        self.files.log("Agent started")
+
+        # Auto-start: analyze the task and execute autonomously
+        desc = self.task_cfg.get("description", "")
+        self.messages.append({
+            "role": "user",
+            "content": f"New task: {desc}\n\nAnalyze this task, create a roadmap using update_roadmap, set the status using update_status, and start executing immediately. Work through the steps autonomously — do not ask me questions, just make progress and report what you did.",
+        })
+        await self._start_turn()
+
+        # Main loop: listen for user input concurrently with LLM turns
+        # Keep recv_task alive across iterations — cancelling a
+        # run_in_executor(readline) only cancels the Future, not the
+        # underlying thread, so a new recv would race the old one for
+        # stdin data and messages would be silently lost.
+        recv_task = asyncio.ensure_future(protocol.recv())
+
+        while True:
+            wait_set = {recv_task}
+            if self._turn_task and not self._turn_task.done():
+                wait_set.add(self._turn_task)
+
+            done, _ = await asyncio.wait(wait_set, return_when=asyncio.FIRST_COMPLETED)
+
+            if recv_task in done:
+                msg = recv_task.result()
+                if msg is None:
+                    await self._cancel_turn()
+                    break
+                if msg.get("type") == "shutdown":
+                    self.files.log("Agent shutting down")
+                    await self._cancel_turn()
+                    break
+
+                # Message consumed — start a fresh recv for next iteration
+                recv_task = asyncio.ensure_future(protocol.recv())
+
+                if msg.get("type") == "interrupt":
+                    await self._cancel_turn()
+                    self.files.log("Interrupted by user")
+                    protocol.send("agent_response", content="Interrupted. What would you like me to do?")
+                    protocol.send("status", state="idle")
+                    continue
+                if msg.get("type") == "user_message":
+                    content = msg.get("content", "")
+                    await self._cancel_turn()
+                    self.messages.append({"role": "user", "content": content})
+                    self._write_transcript()
+                    self.files.log("User message received")
+                    await self._start_turn()
+                    continue
+
+            # Clean up finished turn
+            if self._turn_task and self._turn_task.done():
+                self._turn_task = None
+
+        if self.mcp:
+            await self.mcp.disconnect()
+        self.files.log("Agent stopped")
