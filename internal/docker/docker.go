@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/moby/moby/api/types/container"
@@ -66,11 +67,14 @@ func Start(ctx context.Context, cli *client.Client, t *task.Task, llmCfg *config
 	}
 	soulPath := fmt.Sprintf("%s/%s.md", config.SoulsDir(), soulName)
 
+	artifactsDir := filepath.Join(taskDir, "artifacts")
+
 	mounts := []mount.Mount{
 		{Type: mount.TypeBind, Source: taskDir, Target: "/bowie/task"},
 		{Type: mount.TypeBind, Source: configPath, Target: "/bowie/config/config.json", ReadOnly: true},
 		{Type: mount.TypeBind, Source: cacheDir, Target: "/bowie/cache"},
 		{Type: mount.TypeBind, Source: soulPath, Target: "/bowie/soul/soul.md", ReadOnly: true},
+		{Type: mount.TypeBind, Source: artifactsDir, Target: "/bowie/artifacts"},
 	}
 	if mcpCfg != nil {
 		mcpPath := fmt.Sprintf("%s/%s.json", config.MCPsDir(), t.MCP)

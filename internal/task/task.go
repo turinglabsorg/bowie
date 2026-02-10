@@ -47,6 +47,11 @@ func Create(cfgName, mcpName, soulName, description string) (*Task, error) {
 		return nil, err
 	}
 
+	// Create artifacts directory for MCP servers and tools to store files
+	if err := os.MkdirAll(filepath.Join(dir, "artifacts"), 0o755); err != nil {
+		return nil, fmt.Errorf("create artifacts dir: %w", err)
+	}
+
 	for _, f := range []string{"roadmap.md", "status.md", "memory.md", "logs.md"} {
 		if err := os.WriteFile(filepath.Join(dir, f), []byte(""), 0o644); err != nil {
 			return nil, err
