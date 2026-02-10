@@ -11,6 +11,14 @@ MAX_MESSAGES = 50
 KEEP_FIRST = 2
 KEEP_LAST = 40
 
+# Defaults for context management (can be overridden per-model in llm config)
+DEFAULT_SUMMARIZE_THRESHOLD = 3000   # Summarize results larger than this
+DEFAULT_SUMMARIZE_TARGET = 2000      # Target summary size
+DEFAULT_FALLBACK_MAX_CHARS = 8000    # Fallback truncation limit
+DEFAULT_FALLBACK_KEEP_HEAD = 3000
+DEFAULT_FALLBACK_KEEP_TAIL = 3000
+DEFAULT_MEMORY_MAX_CHARS = 3000      # Memory.md cap in system prompt
+
 BASE_PROMPT = """You are Bowie, an autonomous task-focused AI agent. You may have access to tools from a connected MCP server and internal tools for managing your task state.
 
 {soul}
@@ -90,8 +98,17 @@ class Agent:
         self._interrupted = False
         self._turn_task: asyncio.Task | None = None
 
+        # Context management settings (configurable per model via llm config)
+        ctx = llm_cfg.get("context", {})
+        self.summarize_threshold = ctx.get("summarize_threshold", DEFAULT_SUMMARIZE_THRESHOLD)
+        self.summarize_target = ctx.get("summarize_target", DEFAULT_SUMMARIZE_TARGET)
+        self.fallback_max_chars = ctx.get("fallback_max_chars", DEFAULT_FALLBACK_MAX_CHARS)
+        self.fallback_keep_head = ctx.get("fallback_keep_head", DEFAULT_FALLBACK_KEEP_HEAD)
+        self.fallback_keep_tail = ctx.get("fallback_keep_tail", DEFAULT_FALLBACK_KEEP_TAIL)
+        self.memory_max_chars = ctx.get("memory_max_chars", DEFAULT_MEMORY_MAX_CHARS)
+
     def _build_system(self) -> str:
-        ctx = self.files.context()
+        ctx = self.files.context(memory_max_chars=self.memory_max_chars)
         task_desc = self.task_cfg.get("description", "")
         soul_content = self.soul if self.soul else DEFAULT_SOUL
         system_prompt = BASE_PROMPT.format(soul=soul_content)
@@ -104,6 +121,49 @@ class Agent:
         if len(self.messages) > MAX_MESSAGES:
             self.messages = self.messages[:KEEP_FIRST] + self.messages[-KEEP_LAST:]
 
+    def _compact_result(self, result: str) -> str:
+        """Fallback truncation for when subagent summarization fails.
+
+        Keeps the head and tail of the result so the model sees the structure
+        (beginning) and the actionable info (end, where hints/errors usually are).
+        """
+        if len(result) <= self.fallback_max_chars:
+            return result
+        head = result[:self.fallback_keep_head]
+        tail = result[-self.fallback_keep_tail:]
+        omitted = len(result) - self.fallback_keep_head - self.fallback_keep_tail
+        return f"{head}\n\n[... {omitted} characters omitted — see logs.md for full output ...]\n\n{tail}"
+
+    async def _summarize_result(self, tool_name: str, result: str) -> str:
+        """Compress a tool result using a subagent LLM call.
+
+        For results exceeding SUMMARIZE_THRESHOLD, spawns a quick LLM call
+        that reads the full result and returns a concise version preserving
+        actionable data. Falls back to head/tail truncation on failure.
+
+        Results containing structured hints (simulationHint, scriptContent)
+        are never summarized — an LLM cannot reliably reproduce hex blobs
+        and pre-built calldata. These pass through as-is.
+        """
+        if len(result) <= self.summarize_threshold:
+            return result
+        # Never summarize results with actionable hints that contain
+        # pre-built data (hex calldata, scripts) — LLMs can't copy those exactly
+        if "simulationHint" in result or "scriptContent" in result:
+            self.files.log(f"Skipping summarization for {tool_name} (contains hints)")
+            return result
+        try:
+            self.files.log(f"Summarizing {tool_name} result ({len(result)} chars)")
+            summary = await self.llm.summarize_tool_result(
+                tool_name, result, target_chars=self.summarize_target,
+            )
+            if summary and len(summary) < len(result):
+                self.files.log(f"Summarized {tool_name}: {len(result)} → {len(summary)} chars")
+                return summary
+        except Exception as e:
+            self.files.log(f"Summarization failed for {tool_name}: {e}")
+        return self._compact_result(result)
+
     def _write_transcript(self):
         """Write the conversation transcript to memory.md."""
         lines = []
@@ -113,8 +173,8 @@ class Agent:
             if role == "user":
                 lines.append(f"**User:** {content}\n")
             elif role == "assistant":
-                if content:
-                    lines.append(f"**Bowie:** {content}\n")
+                if content and content.strip():
+                    lines.append(f"**Bowie:** {content.strip()}\n")
                 tool_calls = msg.get("tool_calls")
                 if tool_calls:
                     for tc in tool_calls:
@@ -174,12 +234,14 @@ class Agent:
                 result = f"Unknown tool: {name}"
                 protocol.send("tool_result", tool=name, content=result)
 
+            # Full result goes to logs; summarized version goes to LLM messages
             self.files.log(f"Tool result [{name}]: {result}")
+            compacted = await self._summarize_result(name, result)
 
             results.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": result,
+                "content": compacted,
             })
         self._write_transcript()
         return results

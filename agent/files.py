@@ -36,7 +36,7 @@ class TaskFiles:
         existing = self.read(name)
         self.write(name, existing + content)
 
-    def context(self) -> str:
+    def context(self, memory_max_chars: int = 0) -> str:
         parts = []
         for name, label in [
             ("status.md", "Current Status"),
@@ -44,8 +44,13 @@ class TaskFiles:
             ("roadmap.md", "Roadmap"),
         ]:
             text = self.read(name)
-            if text.strip():
-                parts.append(f"## {label}\n{text.strip()}")
+            if not text.strip():
+                continue
+            # Cap memory.md to avoid unbounded context growth
+            if name == "memory.md" and memory_max_chars > 0 and len(text) > memory_max_chars:
+                # Keep the end (most recent notes) rather than the beginning
+                text = "[earlier notes omitted]\n\n" + text[-memory_max_chars:]
+            parts.append(f"## {label}\n{text.strip()}")
         return "\n\n".join(parts)
 
     def log(self, entry: str):
