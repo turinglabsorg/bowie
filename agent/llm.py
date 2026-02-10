@@ -85,4 +85,10 @@ class LLM:
             litellm.acompletion(model=self.model, messages=messages),
             timeout=timeout,
         )
-        return response.choices[0].message.content or result
+        choices = getattr(response, "choices", None)
+        if not choices:
+            return result
+        msg = getattr(choices[0], "message", None)
+        if msg is None:
+            return result
+        return getattr(msg, "content", None) or result

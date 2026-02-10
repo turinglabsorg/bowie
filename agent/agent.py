@@ -207,19 +207,31 @@ class Agent:
     async def _handle_tool_calls(self, tool_calls: list) -> list[dict]:
         results = []
         for tc in tool_calls:
+            tc_id = getattr(tc, "id", None) or (tc.get("id") if isinstance(tc, dict) else "unknown")
+
             if self._interrupted:
                 results.append({
                     "role": "tool",
-                    "tool_call_id": tc.id,
+                    "tool_call_id": tc_id,
                     "content": "Interrupted by user.",
                 })
                 continue
 
-            fn = tc.function
-            name = fn.name
+            fn = getattr(tc, "function", None) or (tc.get("function") if isinstance(tc, dict) else None)
+            if fn is None:
+                self.files.log(f"Skipping tool call with missing function: {tc}")
+                results.append({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": "Error: malformed tool call (missing function).",
+                })
+                continue
+
+            name = getattr(fn, "name", None) or (fn.get("name") if isinstance(fn, dict) else "unknown")
+            raw_args = getattr(fn, "arguments", None) or (fn.get("arguments") if isinstance(fn, dict) else "{}")
             try:
-                args = json.loads(fn.arguments) if fn.arguments else {}
-            except json.JSONDecodeError:
+                args = json.loads(raw_args) if raw_args else {}
+            except (json.JSONDecodeError, TypeError):
                 args = {}
 
             protocol.send("tool_call", tool=name, args=args)
@@ -240,11 +252,30 @@ class Agent:
 
             results.append({
                 "role": "tool",
-                "tool_call_id": tc.id,
+                "tool_call_id": tc_id,
                 "content": compacted,
             })
         self._write_transcript()
         return results
+
+    def _parse_response(self, response):
+        """Safely extract message from an LLM response.
+
+        Returns (content, tool_calls) or raises ValueError with a
+        descriptive message if the response is malformed.
+        """
+        choices = getattr(response, "choices", None)
+        if not choices:
+            raise ValueError(f"Empty or missing choices in response: {response}")
+        msg = getattr(choices[0], "message", None)
+        if msg is None:
+            raise ValueError(f"Missing message in response choice: {choices[0]}")
+        content = getattr(msg, "content", None) or ""
+        tool_calls = getattr(msg, "tool_calls", None)
+        # Normalise tool_calls: some providers return [] instead of None
+        if tool_calls is not None and len(tool_calls) == 0:
+            tool_calls = None
+        return content, tool_calls
 
     async def _llm_turn(self):
         protocol.send("status", state="thinking")
@@ -253,41 +284,65 @@ class Agent:
 
         full_messages = [{"role": "system", "content": system}] + self.messages
 
+        retries = 0
+        max_retries = 2
+
         for _ in range(MAX_TOOL_ROUNDS):
             if self._interrupted:
                 break
 
             response = await self.llm.completion(full_messages, tools=tools if tools else None)
-            choice = response.choices[0]
-            msg = choice.message
 
-            assistant_msg = {"role": "assistant", "content": msg.content or ""}
-            if msg.tool_calls:
-                assistant_msg["tool_calls"] = [
-                    {
-                        "id": tc.id,
+            try:
+                content, tool_calls = self._parse_response(response)
+            except ValueError as e:
+                retries += 1
+                self.files.log(f"Malformed LLM response (attempt {retries}/{max_retries}): {e}")
+                if retries >= max_retries:
+                    self.files.log("Max retries for malformed responses reached, stopping turn")
+                    protocol.send("error", content=f"LLM returned malformed responses after {max_retries} retries")
+                    break
+                await asyncio.sleep(1)
+                continue
+
+            retries = 0
+
+            assistant_msg = {"role": "assistant", "content": content}
+            if tool_calls:
+                serialized_tcs = []
+                for tc in tool_calls:
+                    fn = getattr(tc, "function", None)
+                    if fn is None:
+                        continue
+                    serialized_tcs.append({
+                        "id": getattr(tc, "id", "unknown"),
                         "type": "function",
-                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                    }
-                    for tc in msg.tool_calls
-                ]
+                        "function": {
+                            "name": getattr(fn, "name", "unknown"),
+                            "arguments": getattr(fn, "arguments", "{}"),
+                        },
+                    })
+                if serialized_tcs:
+                    assistant_msg["tool_calls"] = serialized_tcs
+                else:
+                    tool_calls = None
 
             full_messages.append(assistant_msg)
             self.messages.append(assistant_msg)
 
-            if not msg.tool_calls:
-                if msg.content:
-                    protocol.send("agent_response", content=msg.content)
+            if not tool_calls:
+                if content:
+                    protocol.send("agent_response", content=content)
                 break
 
             # Send intermediate text if the LLM wrote something before calling tools
-            if msg.content:
-                protocol.send("agent_response", content=msg.content)
+            if content:
+                protocol.send("agent_response", content=content)
 
             if self._interrupted:
                 break
 
-            tool_results = await self._handle_tool_calls(msg.tool_calls)
+            tool_results = await self._handle_tool_calls(tool_calls)
             full_messages.extend(tool_results)
             self.messages.extend(tool_results)
 
