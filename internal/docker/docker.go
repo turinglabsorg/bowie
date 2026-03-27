@@ -17,7 +17,7 @@ import (
 	"github.com/turinglabs/bobby/internal/task"
 )
 
-const ImageName = "openbowie-agent:latest"
+const ImageName = "bowie-agent:latest"
 
 type Container struct {
 	ID     string
@@ -57,7 +57,7 @@ func Start(ctx context.Context, cli *client.Client, t *task.Task, llmCfg *config
 		AttachStderr: true,
 		Tty:          false,
 		Labels: map[string]string{
-			"openbowie.task.id": t.ID,
+			"bowie.task.id": t.ID,
 		},
 	}
 
@@ -89,7 +89,7 @@ func Start(ctx context.Context, cli *client.Client, t *task.Task, llmCfg *config
 	resp, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     containerCfg,
 		HostConfig: hostCfg,
-		Name:       "openbowie-" + t.ID,
+		Name:       "bowie-" + t.ID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create container: %w", err)
@@ -201,10 +201,10 @@ func RemoveByID(ctx context.Context, cli *client.Client, containerID string) err
 }
 
 func CleanAll(ctx context.Context, cli *client.Client) (int, error) {
-	// Find all openbowie containers (running or stopped)
+	// Find all bowie containers (running or stopped)
 	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
-		Filters: make(client.Filters).Add("label", "openbowie.task.id"),
+		Filters: make(client.Filters).Add("label", "bowie.task.id"),
 	})
 	if err != nil {
 		return 0, err
@@ -218,7 +218,7 @@ func CleanAll(ctx context.Context, cli *client.Client) (int, error) {
 		}
 	}
 
-	// Remove the openbowie-agent image
+	// Remove the bowie-agent image
 	_, _ = cli.ImageRemove(ctx, ImageName, client.ImageRemoveOptions{Force: true})
 
 	return count, nil
@@ -227,7 +227,7 @@ func CleanAll(ctx context.Context, cli *client.Client) (int, error) {
 func FindByTaskID(ctx context.Context, cli *client.Client, taskID string) (string, bool, error) {
 	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
-		Filters: make(client.Filters).Add("label", "openbowie.task.id="+taskID),
+		Filters: make(client.Filters).Add("label", "bowie.task.id="+taskID),
 	})
 	if err != nil {
 		return "", false, err

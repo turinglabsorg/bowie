@@ -16,9 +16,9 @@ func Run() error {
 	reader = bufio.NewReader(os.Stdin)
 
 	fmt.Println()
-	fmt.Println("=== OpenBowie — Setup Wizard ===")
+	fmt.Println("=== Bowie — Setup Wizard ===")
 	fmt.Println()
-	fmt.Println("OpenBowie is an autonomous agent for testing MCP servers against LLM providers.")
+	fmt.Println("Bowie is an autonomous agent for testing MCP servers against LLM providers.")
 	fmt.Println("This wizard will help you configure your LLM providers and MCP servers.")
 	fmt.Println()
 
@@ -118,7 +118,7 @@ func setupLLMConfig() error {
 	if err := config.SaveLLMConfig(name, &cfg); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
-	fmt.Printf("  Saved: ~/.openbowie/configs/%s.json\n", name)
+	fmt.Printf("  Saved: ~/.bowie/configs/%s.json\n", name)
 	return nil
 }
 
@@ -175,7 +175,7 @@ func setupMCPConfig() error {
 	if err := config.SaveMCPConfig(name, &cfg); err != nil {
 		return fmt.Errorf("saving MCP config: %w", err)
 	}
-	fmt.Printf("  Saved: ~/.openbowie/mcps/%s.json\n", name)
+	fmt.Printf("  Saved: ~/.bowie/mcps/%s.json\n", name)
 	return nil
 }
 
@@ -208,7 +208,7 @@ func setupSoul() error {
 	if err := config.SaveSoul(name, content); err != nil {
 		return fmt.Errorf("saving soul: %w", err)
 	}
-	fmt.Printf("  Saved: ~/.openbowie/souls/%s.md\n", name)
+	fmt.Printf("  Saved: ~/.bowie/souls/%s.md\n", name)
 	return nil
 }
 
@@ -242,9 +242,9 @@ func printSummary() {
 
 	fmt.Println()
 	if len(configs) > 0 && len(mcps) > 0 {
-		fmt.Printf("Example: openbowie new --config %s --mcp %s \"test the MCP tools\"\n", configs[0], mcps[0])
+		fmt.Printf("Example: bowie new --config %s --mcp %s \"test the MCP tools\"\n", configs[0], mcps[0])
 	} else if len(configs) > 0 {
-		fmt.Printf("Example: openbowie new --config %s \"describe your task here\"\n", configs[0])
+		fmt.Printf("Example: bowie new --config %s \"describe your task here\"\n", configs[0])
 	}
 	fmt.Println()
 }

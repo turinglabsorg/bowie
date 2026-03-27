@@ -1,10 +1,10 @@
-# OpenBowie
+# Bowie
 
 Autonomous agent system for testing MCP servers against LLM providers.
 
 ## Architecture
 
-- **Go CLI** (`cmd/openbowie/main.go`): Cobra commands + Bubble Tea TUI
+- **Go CLI** (`cmd/bowie/main.go`): Cobra commands + Bubble Tea TUI
 - **Python agent** (`agent/`): Runs inside Docker, uses litellm for LLM abstraction
 - **Docker**: Each task runs in an isolated container with Python, Node.js, Rust, Foundry
 - **MCP**: Servers launched via stdio inside the container
@@ -12,12 +12,12 @@ Autonomous agent system for testing MCP servers against LLM providers.
 
 ## Key paths
 
-- `cmd/openbowie/main.go` — CLI entry point, all commands
+- `cmd/bowie/main.go` — CLI entry point, all commands
 - `agent/agent.py` — Core agent loop, system prompt, tool handling
 - `agent/protocol.py` — JSON IPC (send/recv over stdin/stdout)
 - `agent/files.py` — Task file management (status, memory, roadmap, logs)
 - `internal/docker/docker.go` — Container lifecycle management
-- `internal/config/config.go` — Config loading/saving (~/.openbowie/)
+- `internal/config/config.go` — Config loading/saving (~/.bowie/)
 - `internal/tui/tui.go` — Terminal UI (Bubble Tea)
 - `internal/onboard/onboard.go` — Setup wizard
 - `internal/task/task.go` — Task CRUD
@@ -25,7 +25,7 @@ Autonomous agent system for testing MCP servers against LLM providers.
 ## Config layout
 
 ```
-~/.openbowie/
+~/.bowie/
   configs/<name>.json    # LLM provider configs
   mcps/<name>.json       # MCP server configs
   souls/<name>.md        # Agent personality/directives
@@ -36,16 +36,16 @@ Autonomous agent system for testing MCP servers against LLM providers.
 ## Build & test
 
 ```bash
-make openbowie       # Build CLI
+make bowie       # Build CLI
 make agent-image     # Build Docker image
 make test            # Run all tests
 ```
 
 ## Docker labels & naming
 
-- Container label: `openbowie.task.id`
-- Container name: `openbowie-<task_id>`
-- Image: `openbowie-agent:latest`
+- Container label: `bowie.task.id`
+- Container name: `bowie-<task_id>`
+- Image: `bowie-agent:latest`
 - Mount paths: `/bowie/task`, `/bowie/config/`, `/bowie/cache`, `/bowie/soul/`, `/bowie/mcp/`
 
 ## Go module

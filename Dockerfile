@@ -7,7 +7,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN curl -L https://foundry.paradigm.xyz | bash && /root/.foundry/bin/foundryup
 ENV PATH="/root/.foundry/bin:${PATH}"
 ENV NPM_CONFIG_CACHE=/bowie/cache/npm
-COPY agent/ /opt/openbowie-agent/agent/
-WORKDIR /opt/openbowie-agent
+COPY agent/ /opt/bowie-agent/agent/
+WORKDIR /opt/bowie-agent
 RUN pip install --no-cache-dir -r agent/requirements.txt
 ENTRYPOINT ["python", "-u", "-m", "agent"]

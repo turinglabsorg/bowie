@@ -8,7 +8,7 @@ import (
 
 func Dir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".openbowie")
+	return filepath.Join(home, ".bowie")
 }
 
 func ConfigsDir() string { return filepath.Join(Dir(), "configs") }

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-SKILL_DIR="$HOME/.claude/skills/openbowie"
+SKILL_DIR="$HOME/.claude/skills/bowie"
 
-echo "=== OpenBowie Installer ==="
+echo "=== Bowie Installer ==="
 echo ""
 
 # ── Dependency checks ──────────────────────────────────────────────
@@ -45,9 +45,9 @@ echo ""
 
 # ── Build ──────────────────────────────────────────────────────────
 
-echo "Building openbowie binary..."
+echo "Building bowie binary..."
 cd "$REPO_DIR"
-make openbowie
+make bowie
 echo ""
 
 # ── Install binary ─────────────────────────────────────────────────
@@ -57,8 +57,8 @@ if [ -w /usr/local/bin ]; then
     INSTALL_DIR="/usr/local/bin"
 fi
 mkdir -p "$INSTALL_DIR"
-cp "$REPO_DIR/openbowie" "$INSTALL_DIR/openbowie"
-echo "Installed binary at $INSTALL_DIR/openbowie"
+cp "$REPO_DIR/bowie" "$INSTALL_DIR/bowie"
+echo "Installed binary at $INSTALL_DIR/bowie"
 
 if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
     echo ""
@@ -80,41 +80,41 @@ if [ -d "$HOME/.claude" ]; then
     mkdir -p "$SKILL_DIR"
     cat > "$SKILL_DIR/SKILL.md" << 'SKILLEOF'
 ---
-name: openbowie
-description: Launch an autonomous AI agent in a Docker container to perform research, DeFi operations, or any task using MCP servers. Use when the user wants to delegate a task to an autonomous agent, or mentions openbowie.
+name: bowie
+description: Launch an autonomous AI agent in a Docker container to perform research, DeFi operations, or any task using MCP servers. Use when the user wants to delegate a task to an autonomous agent, or mentions bowie.
 allowed-tools: Bash, Read
 argument-hint: <task description>
 ---
 
-# OpenBowie — Autonomous Agent Skill
+# Bowie — Autonomous Agent Skill
 
-OpenBowie runs autonomous AI agents inside Docker containers. Each agent gets its own isolated environment with Python, Node.js, Rust, and Foundry. Agents connect to LLM providers and optionally MCP servers to execute tasks.
+Bowie runs autonomous AI agents inside Docker containers. Each agent gets its own isolated environment with Python, Node.js, Rust, and Foundry. Agents connect to LLM providers and optionally MCP servers to execute tasks.
 
 ## Available LLM configs
 
-Check `~/.openbowie/configs/` for available configs. Run `openbowie onboard` if none exist.
+Check `~/.bowie/configs/` for available configs. Run `bowie onboard` if none exist.
 
 ## Available MCP configs
 
-Check `~/.openbowie/mcps/` for available MCP servers.
+Check `~/.bowie/mcps/` for available MCP servers.
 
 ## Commands
 
 ### Create a new task (headless — required for programmatic use)
 
 ```bash
-TASK_ID=$(openbowie new --headless --config <config_name> [--mcp <mcp_name>] [--soul <soul_name>] "task description")
+TASK_ID=$(bowie new --headless --config <config_name> [--mcp <mcp_name>] [--soul <soul_name>] "task description")
 ```
 
-- `--config`: LLM config name (required). Check `ls ~/.openbowie/configs/` for options.
+- `--config`: LLM config name (required). Check `ls ~/.bowie/configs/` for options.
 - `--mcp`: Optional MCP server (e.g., `duckduckgo`, `factor-mcp`)
-- `--soul`: Optional persona (default: `default`). Check `ls ~/.openbowie/souls/`
+- `--soul`: Optional persona (default: `default`). Check `ls ~/.bowie/souls/`
 - Always use `--headless` when calling from Claude Code
 
 ### Send a follow-up message
 
 ```bash
-openbowie send <task_id> "your message"
+bowie send <task_id> "your message"
 ```
 
 Blocks until the agent responds (up to 5 min). Response on stdout, tool calls on stderr.
@@ -122,38 +122,38 @@ Blocks until the agent responds (up to 5 min). Response on stdout, tool calls on
 ### Read task files
 
 ```bash
-openbowie read <task_id> status    # current progress
-openbowie read <task_id> roadmap   # task plan with checkboxes
-openbowie read <task_id> memory    # conversation transcript
-openbowie read <task_id> logs      # full activity log with tool results
-openbowie read <task_id>           # all files
+bowie read <task_id> status    # current progress
+bowie read <task_id> roadmap   # task plan with checkboxes
+bowie read <task_id> memory    # conversation transcript
+bowie read <task_id> logs      # full activity log with tool results
+bowie read <task_id>           # all files
 ```
 
 ### Other commands
 
 ```bash
-openbowie list                     # list all tasks
-openbowie stop <task_id>           # stop a running task
-openbowie rm <task_id>             # remove task and data
-openbowie clean                    # remove all containers and image
+bowie list                     # list all tasks
+bowie stop <task_id>           # stop a running task
+bowie rm <task_id>             # remove task and data
+bowie clean                    # remove all containers and image
 ```
 
 ## Typical workflow
 
-1. Check available configs: `ls ~/.openbowie/configs/`
-2. Launch: `TASK_ID=$(openbowie new --headless --config <cfg> [--mcp <mcp>] "task")`
+1. Check available configs: `ls ~/.bowie/configs/`
+2. Launch: `TASK_ID=$(bowie new --headless --config <cfg> [--mcp <mcp>] "task")`
 3. Wait ~15-30 seconds for the agent to start working
-4. Poll: `openbowie read "$TASK_ID" status`
-5. Follow up: `openbowie send "$TASK_ID" "additional instructions"`
-6. Read results: `openbowie read "$TASK_ID" memory`
-7. Clean up: `openbowie stop "$TASK_ID" && openbowie rm "$TASK_ID"`
+4. Poll: `bowie read "$TASK_ID" status`
+5. Follow up: `bowie send "$TASK_ID" "additional instructions"`
+6. Read results: `bowie read "$TASK_ID" memory`
+7. Clean up: `bowie stop "$TASK_ID" && bowie rm "$TASK_ID"`
 
 ## Important notes
 
 - The agent starts working immediately — no need to send a first message
-- Always capture the task ID from `openbowie new --headless`
-- Use `openbowie read <id> status` to check progress before sending follow-ups
-- Task data persists at `~/.openbowie/tasks/task_<id>/`
+- Always capture the task ID from `bowie new --headless`
+- Use `bowie read <id> status` to check progress before sending follow-ups
+- Task data persists at `~/.bowie/tasks/task_<id>/`
 SKILLEOF
     echo "  Skill installed at $SKILL_DIR/SKILL.md"
 else
@@ -164,14 +164,14 @@ fi
 echo ""
 echo "=== Installation complete ==="
 echo ""
-echo "  Binary:       $INSTALL_DIR/openbowie"
-echo "  Docker image: openbowie-agent:latest"
-echo "  Configs:      ~/.openbowie/"
+echo "  Binary:       $INSTALL_DIR/bowie"
+echo "  Docker image: bowie-agent:latest"
+echo "  Configs:      ~/.bowie/"
 if [ -d "$SKILL_DIR" ]; then
 echo "  Claude skill: $SKILL_DIR/SKILL.md"
 fi
 echo ""
 echo "Next steps:"
-echo "  1. Run 'openbowie onboard' to configure LLM providers and MCP servers"
-echo "  2. Run 'openbowie new --config <name> \"your task\"' to start your first agent"
+echo "  1. Run 'bowie onboard' to configure LLM providers and MCP servers"
+echo "  2. Run 'bowie new --config <name> \"your task\"' to start your first agent"
 echo ""

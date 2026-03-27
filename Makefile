@@ -1,8 +1,8 @@
 agent-image:
-	docker build -t openbowie-agent:latest .
+	docker build -t bowie-agent:latest .
 
-openbowie:
-	go build -o openbowie ./cmd/openbowie
+bowie:
+	go build -o bowie ./cmd/bowie
 
 test: test-agent test-go
 
@@ -12,4 +12,4 @@ test-agent:
 test-go:
 	go test ./... -v
 
-.PHONY: agent-image openbowie test test-agent test-go
+.PHONY: agent-image bowie test test-agent test-go

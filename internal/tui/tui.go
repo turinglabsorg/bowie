@@ -406,10 +406,10 @@ func (m Model) View() string {
 
 func (m Model) viewList() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("OpenBowie — Tasks") + "\n\n")
+	b.WriteString(titleStyle.Render("Bowie — Tasks") + "\n\n")
 
 	if len(m.tasks) == 0 {
-		b.WriteString(dimStyle.Render("  No tasks. Use 'openbowie new' to create one.") + "\n")
+		b.WriteString(dimStyle.Render("  No tasks. Use 'bowie new' to create one.") + "\n")
 	}
 
 	for i, t := range m.tasks {

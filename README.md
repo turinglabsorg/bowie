@@ -1,4 +1,4 @@
-# OpenBowie
+# Bowie
 
 > *"I don't know where I'm going from here, but I promise it won't be boring."*
 
@@ -18,28 +18,28 @@ Think of it as a scratchpad for poking at MCP tools with different models. It tu
 
 ```bash
 # Build the CLI
-make openbowie
+make bowie
 
 # Build the agent Docker image (includes Python, Node.js, Rust, Foundry)
 make agent-image
 
 # Run the setup wizard
-./openbowie onboard
+./bowie onboard
 ```
 
-The onboard wizard walks you through configuring your LLM provider(s), souls, and optionally any MCP servers. It writes config files to `~/.openbowie/`.
+The onboard wizard walks you through configuring your LLM provider(s), souls, and optionally any MCP servers. It writes config files to `~/.bowie/`.
 
 Once configured:
 
 ```bash
 # Start a task with an MCP
-./openbowie new --config anthropic --mcp duckduckgo "search for the latest AI agent frameworks"
+./bowie new --config anthropic --mcp duckduckgo "search for the latest AI agent frameworks"
 
 # Start a task without an MCP (just the LLM + internal tools)
-./openbowie new --config anthropic "help me plan a project"
+./bowie new --config anthropic "help me plan a project"
 
 # Start with a custom soul
-./openbowie new --config anthropic --soul researcher "deep dive into quantum computing"
+./bowie new --config anthropic --soul researcher "deep dive into quantum computing"
 ```
 
 The agent starts immediately — it analyzes the task, creates a roadmap, and begins executing autonomously.
@@ -52,16 +52,16 @@ For programmatic use (e.g., from Claude Code or scripts):
 
 ```bash
 # Start a task headless — prints task ID and exits
-TASK_ID=$(./openbowie new --headless --config anthropic --mcp factor-mcp "deploy a vault on Arbitrum")
+TASK_ID=$(./bowie new --headless --config anthropic --mcp factor-mcp "deploy a vault on Arbitrum")
 
 # Send a follow-up message and get the response
-./openbowie send "$TASK_ID" "now add an Aave adapter to the vault"
+./bowie send "$TASK_ID" "now add an Aave adapter to the vault"
 
 # Read task files
-./openbowie read "$TASK_ID" status    # current status
-./openbowie read "$TASK_ID" roadmap   # task plan
-./openbowie read "$TASK_ID" memory    # conversation transcript
-./openbowie read "$TASK_ID" logs      # full activity log with tool results
+./bowie read "$TASK_ID" status    # current status
+./bowie read "$TASK_ID" roadmap   # task plan
+./bowie read "$TASK_ID" memory    # conversation transcript
+./bowie read "$TASK_ID" logs      # full activity log with tool results
 ```
 
 ## TUI Keyboard Shortcuts
@@ -76,7 +76,7 @@ TASK_ID=$(./openbowie new --headless --config anthropic --mcp factor-mcp "deploy
 
 ## Configuration
 
-### LLM Config (`~/.openbowie/configs/<name>.json`)
+### LLM Config (`~/.bowie/configs/<name>.json`)
 
 ```json
 {
@@ -107,7 +107,7 @@ For Ollama, use `endpoint` instead:
 }
 ```
 
-### MCP Config (`~/.openbowie/mcps/<name>.json`)
+### MCP Config (`~/.bowie/mcps/<name>.json`)
 
 Basic MCP (npm package, auto-installed via npx):
 
@@ -147,7 +147,7 @@ Git-based MCP with build step:
 
 The `install` field runs once before the MCP server starts. Use `/bowie/cache/` for persistence across runs.
 
-### Souls (`~/.openbowie/souls/<name>.md`)
+### Souls (`~/.bowie/souls/<name>.md`)
 
 > *"I always had a repulsive need to be something more than human."*
 
@@ -155,33 +155,33 @@ Souls define the agent's personality and directives. A `default` soul ships out 
 
 ```bash
 # Use during onboard
-./openbowie onboard
+./bowie onboard
 
 # Or drop a markdown file directly
-echo "Be concise. Think step by step. Always verify before acting." > ~/.openbowie/souls/careful.md
+echo "Be concise. Think step by step. Always verify before acting." > ~/.bowie/souls/careful.md
 
 # Then use it
-./openbowie new --config anthropic --soul careful "audit this smart contract"
+./bowie new --config anthropic --soul careful "audit this smart contract"
 ```
 
 ## Commands
 
 | Command | What it does |
 |---------|-------------|
-| `openbowie onboard` | Interactive setup wizard |
-| `openbowie new --config <cfg> [--mcp <mcp>] [--soul <soul>] "desc"` | Create a task and start the agent |
-| `openbowie new --headless ...` | Start a task without TUI (prints task ID) |
-| `openbowie list` | List all tasks and their status |
-| `openbowie attach <task_id>` | Attach to a running (or stopped) task |
-| `openbowie send <task_id> "msg"` | Send a message and print the response |
-| `openbowie read <task_id> [file]` | Read task files (status/roadmap/memory/logs) |
-| `openbowie stop <task_id>` | Stop a running task |
-| `openbowie restart <task_id>` | Restart a task |
-| `openbowie logs <task_id>` | Show task activity logs |
-| `openbowie rm <task_id>` | Remove a task and its data |
-| `openbowie clean` | Remove all containers and the agent image |
+| `bowie onboard` | Interactive setup wizard |
+| `bowie new --config <cfg> [--mcp <mcp>] [--soul <soul>] "desc"` | Create a task and start the agent |
+| `bowie new --headless ...` | Start a task without TUI (prints task ID) |
+| `bowie list` | List all tasks and their status |
+| `bowie attach <task_id>` | Attach to a running (or stopped) task |
+| `bowie send <task_id> "msg"` | Send a message and print the response |
+| `bowie read <task_id> [file]` | Read task files (status/roadmap/memory/logs) |
+| `bowie stop <task_id>` | Stop a running task |
+| `bowie restart <task_id>` | Restart a task |
+| `bowie logs <task_id>` | Show task activity logs |
+| `bowie rm <task_id>` | Remove a task and its data |
+| `bowie clean` | Remove all containers and the agent image |
 
-Running `openbowie` with no arguments opens an interactive task list.
+Running `bowie` with no arguments opens an interactive task list.
 
 ## How It Works
 
@@ -199,7 +199,7 @@ Running `openbowie` with no arguments opens an interactive task list.
 
 > *"I'm not a prophet or a stone aged man, just a mortal with potential of a superman."*
 
-OpenBowie is designed to be autonomous. When you create a task:
+Bowie is designed to be autonomous. When you create a task:
 
 - It immediately analyzes the task and creates a roadmap
 - It executes steps without asking for permission
@@ -213,7 +213,7 @@ OpenBowie is designed to be autonomous. When you create a task:
 ```
 cmd/bobby/         CLI entry point (Cobra commands)
 internal/
-  config/          Config loading/saving (~/.openbowie/)
+  config/          Config loading/saving (~/.bowie/)
   docker/          Docker container management
   onboard/         Interactive setup wizard
   task/            Task CRUD and file management
@@ -229,7 +229,7 @@ agent/             Python agent (runs in Docker)
 ## Development
 
 ```bash
-make openbowie      # Build the CLI
+make bowie      # Build the CLI
 make agent-image    # Build the Docker image
 make test           # Run all tests
 make test-go        # Go tests only
