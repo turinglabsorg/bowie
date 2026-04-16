@@ -51,6 +51,20 @@ INTERNAL_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "execute_shell",
+            "description": "Execute a shell command and return stdout + stderr. Use this to run any command: install packages, run scripts, read files, etc.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Shell command to execute"},
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "update_status",
             "description": "Update the status.md file with current task status",
             "parameters": {
@@ -187,7 +201,29 @@ class Agent:
         return INTERNAL_TOOLS + mcp_tools
 
     async def _handle_internal_tool(self, name: str, args: dict) -> str:
-        if name == "update_status":
+        if name == "execute_shell":
+            import subprocess
+            cmd = args.get("command", "")
+            self.files.log(f"Shell: {cmd}")
+            try:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
+                output = result.stdout
+                if result.stderr:
+                    output += "\n" + result.stderr
+                output = output.strip()
+                if not output:
+                    output = f"(exit code {result.returncode})"
+                if len(output) > 10000:
+                    output = output[:10000] + "\n... (truncated)"
+                self.files.log(f"Shell result: {output[:200]}")
+                return output
+            except subprocess.TimeoutExpired:
+                self.files.log("Shell: timeout after 120s")
+                return "Error: command timed out after 120 seconds"
+            except Exception as e:
+                self.files.log(f"Shell error: {e}")
+                return f"Error: {e}"
+        elif name == "update_status":
             self.files.write("status.md", args["content"])
             self.files.log(f"Status updated")
             protocol.send("tool_result", tool="status", content=args["content"])
@@ -237,7 +273,7 @@ class Agent:
             protocol.send("tool_call", tool=name, args=args)
             self.files.log(f"Tool call: {name}")
 
-            if name in ("update_status", "update_memory", "update_roadmap"):
+            if name in ("execute_shell", "update_status", "update_memory", "update_roadmap"):
                 result = await self._handle_internal_tool(name, args)
             elif self.mcp and self.mcp.has_tool(name):
                 result = await self.mcp.call_tool(name, args)
